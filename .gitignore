@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.nx/
+.env
+*.log
+.vscode/
+.idea/
+coverage/
+tmp/

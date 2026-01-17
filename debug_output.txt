@@ -1,0 +1,7 @@
+V1: 29, V2: 29, Unique: 29
+c6c5b3: Expect "Contract Revision" -> Got "Contract Revision" [MATCH]
+6912ec: Expect "Contract Revision" -> Got "Contract Revision" [MATCH]
+ebd958: Expect "Storage Proof" -> Got "Siacoin Transfer" [FAIL]
+09cc19: Expect "Siacoin Transfer" -> Got "Siacoin Transfer" [MATCH]
+b57823: Expect "Contract formation" -> Got "Siacoin Transfer" [FAIL]
+622cbd: Expect "Siacoin Transfer" -> Got "Siacoin Transfer" [MATCH]

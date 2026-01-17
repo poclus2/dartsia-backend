@@ -1,0 +1,10 @@
+node_modules
+tmp
+.git
+.nx
+.vscode
+coverage
+!dist/apps/worker
+dist/libs
+# We need dist/apps/analytics
+!dist/apps/analytics

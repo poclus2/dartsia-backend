@@ -1,0 +1,4 @@
+--- V1 vs V2 Comparison ---
+V1 Keys: id, siacoinInputs, siacoinOutputs, fileContractRevisions, minerFee
+V2 Keys: id, siacoinInputs, siacoinOutputs, fileContractRevisions, minerFee
+V1 and V2 objects are IDENTICAL.

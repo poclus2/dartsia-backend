@@ -1,0 +1,88 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-sia_nexus}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  gateway:
+    build:
+      context: .
+      target: gateway
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+      - EXPLORER_URL=http://explorer:3001
+      - ANALYTICS_URL=http://analytics:3002
+      - API_KEY_SECRET=secret
+    depends_on:
+      - redis
+
+  explorer:
+    build:
+      context: .
+      target: explorer
+    ports:
+      - "3001:3001"
+    environment:
+      - PORT=3001
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - SIA_EXPLORED_API=https://explorer.siagraph.info
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-sia_nexus}
+      - NODE_ENV=production
+    depends_on:
+      - redis
+      - postgres
+    extra_hosts:
+      - "explorer.siagraph.info:141.95.84.129"
+
+  analytics:
+    image: backend-analytics:v2
+    build:
+      context: .
+      target: analytics
+    ports:
+      - "3002:3002"
+    environment:
+      - ANALYTICS_PORT=3002
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-sia_nexus}
+      - SIA_EXPLORED_API=https://explorer.siagraph.info
+      - NODE_ENV=production
+    depends_on:
+      - postgres
+    extra_hosts:
+      - "explorer.siagraph.info:141.95.84.129"
+
+  worker:
+    build:
+      context: .
+      target: worker
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - SIA_API_URL=${SIA_API_URL:-https://api.sia.tech}
+      - SIA_EXPLORED_API=${SIA_EXPLORED_API:-https://explorer.siagraph.info}
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-sia_nexus}
+      - NODE_ENV=production
+    extra_hosts:
+      - "explorer.siagraph.info:141.95.84.129"
+    depends_on:
+      - postgres
+      - redis
+
+volumes:
+  postgres_data:
