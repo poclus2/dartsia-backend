@@ -22,8 +22,9 @@ export class BlockController {
     }
 
     @Get('search')
-    searchBlock(@Query('q') query: string) {
-        return this.blockService.searchBlock(query);
+    async searchBlock(@Query('q') query: string) {
+        const result = await this.blockService.searchBlock(query);
+        return result ? [result] : [];
     }
 
     @Get('stats')

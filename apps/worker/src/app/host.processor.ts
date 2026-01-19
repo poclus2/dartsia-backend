@@ -1,5 +1,5 @@
-import { Processor, WorkerHost } from '@nestjs/bullmq';
-import { Job } from 'bullmq';
+import { Processor, WorkerHost, InjectQueue } from '@nestjs/bullmq';
+import { Job, Queue } from 'bullmq';
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -28,6 +28,7 @@ export class HostScanProcessor extends WorkerHost {
         private readonly hostRepo: Repository<Host>,
         @InjectRepository(HostMetric)
         private readonly metricRepo: Repository<HostMetric>,
+        @InjectQueue('ingestion') private ingestionQueue: Queue,
     ) {
         super();
     }
@@ -35,16 +36,16 @@ export class HostScanProcessor extends WorkerHost {
     async process(job: Job<any, any, string>): Promise<any> {
         this.logger.log(`Processing job: ${job.name} (ID: ${job.id})`);
         if (job.name === 'host-sync') {
-            await this.syncHosts();
+            await this.syncHosts(job);
         } else {
             this.logger.warn(`Unknown job name: ${job.name}`);
         }
     }
 
-    private async syncHosts() {
+    private async syncHosts(job: Job) {
         this.logger.log('Starting host sync & scoring...');
         let offset = 0;
-        const limit = 100;
+        const limit = 500;
         let successCount = 0;
         let totalFetched = 0;
 
@@ -132,14 +133,20 @@ export class HostScanProcessor extends WorkerHost {
 
                 const storagePrice = this.parseNumeric(rawStoragePrice, NaN); // Use NaN to detect missing
 
-                // If critical metrics are missing, we skip SCORING and SNAPSHOT, but keep the Registry update (seen status)
-                // Filter: Also skip if price is 0 (invalid data) to avoid messing up average metrics
-                if (isNaN(storagePrice) || storagePrice <= 0) {
+                // Relaxed filter: Accept hosts that are accepting contracts OR have valid price
+                // This matches other explorers' "active host" definition more closely
+                const acceptingContracts = data.settings?.acceptingcontracts || data.v2Settings?.acceptingContracts || data.v2Settings?.accepting_contracts;
+                const hasValidPrice = !isNaN(storagePrice) && storagePrice > 0;
+                const wasRecentlySeen = data.lastScanSuccessful && data.lastScan; // Has been scanned successfully
+
+                // Skip only if: no valid price AND not accepting contracts AND not recently seen
+                if (!hasValidPrice && !acceptingContracts && !wasRecentlySeen) {
                     await this.hostRepo.save(host); // Save "Seen" status
-                    continue; // Skip metrics
+                    continue; // Skip scoring
                 }
 
-                const normPrice = Math.max(0, Math.min(1, 1000 / (storagePrice + 1)));
+                // Price normalization: if invalid price, use 0 (penalty)
+                const normPrice = hasValidPrice ? Math.max(0, Math.min(1, 1000 / (storagePrice + 1))) : 0;
 
                 const firstSeenDate = host.firstSeen || now;
                 const ageMs = now.getTime() - firstSeenDate.getTime();
@@ -187,5 +194,17 @@ export class HostScanProcessor extends WorkerHost {
         }
 
         this.logger.log(`Synced ${successCount}/${totalFetched} hosts.`);
+
+        // Recursive Scheduling: Trigger next scan 30 minutes AFTER this one finishes
+        this.logger.log('Scheduling next host scan in 30 minutes...');
+        await this.ingestionQueue.add(
+            'host-sync',
+            {},
+            {
+                delay: 30 * 60 * 1000,
+                removeOnComplete: true,
+                removeOnFail: 100
+            }
+        );
     }
 }

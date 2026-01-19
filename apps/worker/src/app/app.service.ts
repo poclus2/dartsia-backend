@@ -17,20 +17,14 @@ export class AppService implements OnApplicationBootstrap {
     // Clean existing repeatable jobs to avoid duplicates on restart
     await this.cleanOldJobs();
 
-    // 1. Host Sync - Analyzes hosts periodically
+    // 1. Host Sync - Analyzes hosts (triggered recursively by processor)
     await this.ingestionQueue.add(
       'host-sync',
       {},
       {
-        repeat: {
-          every: 10 * 60 * 1000, // 10 minutes
-        },
-        jobId: 'host-sync-periodic' // Ensure singleton
+        jobId: 'host-sync-initial' // Initial run only
       }
     );
-
-    // Trigger immediate run
-    await this.ingestionQueue.add('host-sync', {});
 
     // ... block sync ...
     await this.blockQueue.add(

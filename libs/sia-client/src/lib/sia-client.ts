@@ -47,9 +47,24 @@ export class SiaClient {
   }
 
   async getTransaction(id: string): Promise<any> {
-    // Explored API: GET /api/transactions/:id
-    const { data } = await this.axios.get(`/api/transactions/${id}`);
-    return data;
+    // Try V1 endpoint first (blocks < 526000)
+    try {
+      const { data } = await this.axios.get(`/api/transactions/${id}`);
+      return data;
+    } catch (error: any) {
+      // If V1 fails with 404, try V2 endpoint (blocks >= 526000)
+      if (error.response?.status === 404) {
+        try {
+          const { data } = await this.axios.get(`/api/v2/transactions/${id}`);
+          return data;
+        } catch (v2Error) {
+          // Both failed, throw original error
+          throw error;
+        }
+      }
+      // Non-404 error, rethrow
+      throw error;
+    }
   }
 
   async getNetworkMetrics(): Promise<any> {

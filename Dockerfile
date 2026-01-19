@@ -8,7 +8,7 @@ COPY package*.json ./
 COPY nx.json tsconfig.base.json ./
 
 # Install dependencies (including dev dependencies for build)
-RUN npm install
+RUN npm install --legacy-peer-deps
 
 # Copy all source code
 COPY . .

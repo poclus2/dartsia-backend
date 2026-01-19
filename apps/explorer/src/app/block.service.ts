@@ -5,6 +5,7 @@ import { BlockDto } from 'common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Block } from 'database'; // Assuming Block entity is also in common
+import axios from 'axios';
 
 @Injectable()
 export class BlockService {
@@ -196,19 +197,52 @@ export class BlockService {
     async searchBlock(query: string): Promise<BlockDto | null> {
         if (!query) return null;
 
+        let result: BlockDto | null = null;
+
+        // 1. Try Local DB / Local Node
         if (!isNaN(Number(query))) {
             try {
-                return await this.getBlock(Number(query));
-            } catch {
-                return null;
+                result = await this.getBlock(Number(query));
+            } catch (e) {
+                console.warn(`[Search] Local lookup failed for height ${query}:`, e.message);
+            }
+        } else {
+            try {
+                result = await this.getBlock(query);
+            } catch (e) {
+                console.warn(`[Search] Local lookup failed for hash ${query}:`, e.message);
             }
         }
 
-        // Try as Hash/ID
+        if (result) return result;
+
+        // 2. Fallback: External Explorer API (Sia Graph or similar)
+        const exploredApi = process.env.SIA_EXPLORED_API || 'https://explorer.siagraph.info';
         try {
-            return await this.getBlock(query);
-        } catch {
-            return null;
+            console.log(`[Search] Local lookup failed for '${query}'. Trying external: ${exploredApi}`);
+            // Try as block (works for height or hash usually on some APIs)
+            // Or use /api/explorer/hashes for hash
+            const url = !isNaN(Number(query))
+                ? `${exploredApi}/api/explorer/blocks/${query}`
+                : `${exploredApi}/api/explorer/hashes/${query}`;
+
+            const { data } = await axios.get(url, { timeout: 5000 });
+
+            // Validate response type.
+            if (data && (data.block || data.height || data.transaction)) {
+                if (data.block) return data.block;
+                if (data.type === 'block') return data.block;
+                return data;
+            }
+        } catch (e) {
+            // Don't crash on external API failures (404, timeout, etc.)
+            if (axios.isAxiosError(e)) {
+                console.warn(`[Search] External lookup failed for '${query}': ${e.response?.status || e.code} ${e.message}`);
+            } else {
+                console.warn(`[Search] External lookup error for '${query}':`, e.message);
+            }
         }
+
+        return null;
     }
 }
