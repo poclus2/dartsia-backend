@@ -56,9 +56,12 @@ jobs:
           username: ${{ secrets.DO_USER }}
           password: ${{ secrets.DO_PASSWORD }}
           script: |
-            cd /opt/siafrench-backend
+            cd /opt/siafrench-backend/dartsia-backend
             echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
             
+            # Ensure latest config
+            git pull origin main
+
             # Update environment variables
             cat > .env << EOF
             POSTGRES_DB=${{ secrets.POSTGRES_DB }}
