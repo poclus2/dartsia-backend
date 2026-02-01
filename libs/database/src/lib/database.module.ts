@@ -8,7 +8,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
         type: 'postgres',
         url: process.env.DATABASE_URL,
         autoLoadEntities: true,
-        synchronize: process.env.NODE_ENV !== 'production',
+        synchronize: true, // Temporary: force sync to create tables
       }),
     }),
   ],
