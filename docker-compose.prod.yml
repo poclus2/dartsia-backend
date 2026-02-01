@@ -35,7 +35,7 @@ services:
       - siafrench-network
 
   explorer:
-    image: ghcr.io/${GITHUB_REPOSITORY}:latest
+    image: ghcr.io/poclus2/dartsia-backend:latest
     container_name: siafrench-explorer
     restart: unless-stopped
     depends_on:
@@ -68,7 +68,7 @@ services:
       - siafrench-network
 
   worker:
-    image: ghcr.io/${GITHUB_REPOSITORY}:latest
+    image: ghcr.io/poclus2/dartsia-backend:latest
     container_name: siafrench-worker
     restart: unless-stopped
     depends_on:
@@ -99,7 +99,7 @@ services:
       - siafrench-network
 
   analytics:
-    image: ghcr.io/${GITHUB_REPOSITORY}:latest
+    image: ghcr.io/poclus2/dartsia-backend:latest
     container_name: siafrench-analytics
     restart: unless-stopped
     depends_on:
@@ -130,13 +130,13 @@ services:
       - siafrench-network
 
   gateway:
-    image: ghcr.io/${GITHUB_REPOSITORY}:latest
+    image: ghcr.io/poclus2/dartsia-backend:latest
     container_name: siafrench-gateway
     restart: unless-stopped
     environment:
       NODE_ENV: production
-      EXPLORER_API: http://explorer:3000
-      ANALYTICS_API: http://analytics:3000 # Internal port 3000
+      EXPLORER_URL: http://explorer:3000
+      ANALYTICS_URL: http://analytics:3000 # Internal port 3000
     command: [ "node", "dist/apps/gateway/main.js" ]
     ports:
       - "3001:3000"
