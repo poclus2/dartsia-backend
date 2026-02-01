@@ -133,16 +133,22 @@ export class HostScanProcessor extends WorkerHost {
 
                 const storagePrice = this.parseNumeric(rawStoragePrice, NaN); // Use NaN to detect missing
 
-                // Relaxed filter: Accept hosts that are accepting contracts OR have valid price
-                // This matches other explorers' "active host" definition more closely
+                // Strict filter: SAVE host only if it meets at least one meaningful criterion
                 const acceptingContracts = data.settings?.acceptingcontracts || data.v2Settings?.acceptingContracts || data.v2Settings?.accepting_contracts;
                 const hasValidPrice = !isNaN(storagePrice) && storagePrice > 0;
-                const wasRecentlySeen = data.lastScanSuccessful && data.lastScan; // Has been scanned successfully
 
-                // Skip only if: no valid price AND not accepting contracts AND not recently seen
-                if (!hasValidPrice && !acceptingContracts && !wasRecentlySeen) {
-                    await this.hostRepo.save(host); // Save "Seen" status
-                    continue; // Skip scoring
+                // Check if host was scanned recently (last 7 days)
+                const wasRecentlySeen = data.lastScanSuccessful && data.lastScan;
+                const recentlyActive = wasRecentlySeen && (() => {
+                    const scanDate = new Date(data.lastScan);
+                    const daysSinceLastScan = (now.getTime() - scanDate.getTime()) / (24 * 3600 * 1000);
+                    return daysSinceLastScan <= 7; // Active in last week
+                })();
+
+                // Skip completely if host doesn't meet ANY active criteria
+                if (!recentlyActive && !acceptingContracts && !hasValidPrice) {
+                    // Don't save to database - inactive host
+                    continue;
                 }
 
                 // Price normalization: if invalid price, use 0 (penalty)
