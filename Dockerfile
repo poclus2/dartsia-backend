@@ -16,37 +16,18 @@ COPY . .
 # Build all apps
 RUN npx nx run-many --target=build --all --prod
 
-# Gateway Runtime
-FROM node:18-alpine AS gateway
+# Production Runtime (Unified Image)
+FROM node:18-alpine
 WORKDIR /app
-COPY --from=build /app/dist/apps/gateway ./
-COPY --from=build /app/package-docker.json ./package.json
-RUN npm install --production
-EXPOSE 3000
-CMD ["node", "main.js"]
 
-# Explorer Runtime
-FROM node:18-alpine AS explorer
-WORKDIR /app
-COPY --from=build /app/dist/apps/explorer ./
-COPY --from=build /app/package-docker.json ./package.json
-RUN npm install --production
-EXPOSE 3001
-CMD ["node", "main.js"]
+# Copy all built apps
+COPY --from=build /app/dist ./dist
 
-# Analytics Runtime
-FROM node:18-alpine AS analytics
-WORKDIR /app
-COPY --from=build /app/dist/apps/analytics ./
-COPY --from=build /app/package-docker.json ./package.json
-RUN npm install --production
-EXPOSE 3002
-CMD ["node", "main.js"]
+# Copy package files
+COPY --from=build /app/package*.json ./
 
-# Worker Runtime
-FROM node:18-alpine AS worker
-WORKDIR /app
-COPY --from=build /app/dist/apps/worker ./
-COPY --from=build /app/package-docker.json ./package.json
-RUN npm install --production
-CMD ["node", "main.js"]
+# Install production dependencies
+RUN npm install --production --legacy-peer-deps
+
+# Default command (can be overridden by docker-compose)
+CMD ["node", "dist/apps/gateway/main.js"]
