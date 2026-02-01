@@ -19,13 +19,15 @@ export class AnalyticsService {
         // 1. Total Hosts (all scanned hosts in DB)
         const totalHosts = await this.hostRepo.count();
 
-        // 2. Active Hosts (scanned in last 7 days) - matches Worker filter
-        const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+        // 2. Active Hosts (scanned in last 48 hours)
+        const twoDaysAgo = new Date(Date.now() - 48 * 60 * 60 * 1000);
         const activeHosts = await this.hostRepo.count({
             where: {
-                lastSeen: MoreThan(sevenDaysAgo)
+                lastSeen: MoreThan(twoDaysAgo)
             }
         });
+
+        // 3. Fetch Network Metrics from API (storage info only)
         let total = 0;
         let remaining = 0;
         let used = 0;
@@ -35,7 +37,7 @@ export class AnalyticsService {
             const apiMetrics = await this.siaClient.getNetworkMetrics();
             console.log('DEBUG: API Metrics Response:', JSON.stringify(apiMetrics));
 
-            activeHosts = apiMetrics.activeHosts || 0;
+            // NOTE: We ignore apiMetrics.activeHosts and use DB count instead
             total = Number(apiMetrics.totalStorage || apiMetrics.totalstorage || 0);
             remaining = Number(apiMetrics.remainingStorage || apiMetrics.remainingstorage || 0);
             used = total - remaining;
@@ -77,7 +79,7 @@ export class AnalyticsService {
 
         return {
             totalHosts,      // All scanned hosts in DB
-            activeHosts,     // Hosts active in last 7 days
+            activeHosts,     // Hosts active in last 48 hours
             usedStorage: used.toString(),
             totalStorage: total.toString(),
             avgStoragePrice,
