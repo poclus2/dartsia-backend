@@ -16,16 +16,16 @@ export class AnalyticsService {
     }
 
     async getNetworkStats() {
-        // 1. Active Hosts (scanned in last 7 days) - matches Worker filter
+        // 1. Total Hosts (all scanned hosts in DB)
+        const totalHosts = await this.hostRepo.count();
+
+        // 2. Active Hosts (scanned in last 7 days) - matches Worker filter
         const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
         const activeHosts = await this.hostRepo.count({
             where: {
                 lastSeen: MoreThan(sevenDaysAgo)
             }
         });
-
-        // 2. Fetch Network Metrics from API
-        let activeHosts = 0;
         let total = 0;
         let remaining = 0;
         let used = 0;
@@ -76,11 +76,11 @@ export class AnalyticsService {
         });
 
         return {
-            totalHosts: activeHosts,  // Renamed but contains active count for API compatibility
-            activeHosts,
+            totalHosts,      // All scanned hosts in DB
+            activeHosts,     // Hosts active in last 7 days
             usedStorage: used.toString(),
             totalStorage: total.toString(),
-            avgStoragePrice, // Added field
+            avgStoragePrice,
             blockHeight: tip?.height || 0,
             lastBlockTime: tip?.timestamp
         };
