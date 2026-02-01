@@ -96,14 +96,12 @@ export class HostScanProcessor extends WorkerHost {
                     host = this.hostRepo.create({
                         publicKey: data.publicKey,
                         firstSeen: data.firstSeen ? new Date(data.firstSeen) : now,
-                        // Fix: lastScanSuccessful is boolean. Use lastScan if true.
-                        lastSeen: (data.lastScanSuccessful && data.lastScan) ? new Date(data.lastScan) : new Date(0)
+                        // Fix: Set lastSeen to current scan time (we're processing this host now)
+                        lastSeen: now
                     });
                 } else {
-                    // Update lastSeen if API reports successful scan
-                    if (data.lastScanSuccessful && data.lastScan) {
-                        host.lastSeen = new Date(data.lastScan);
-                    }
+                    // Update lastSeen to current scan time (we just fetched this host)
+                    host.lastSeen = now;
                 }
 
                 host.netAddress = data.netAddress || null;
