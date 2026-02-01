@@ -35,7 +35,7 @@ services:
       - siafrench-network
 
   explorer:
-    image: ghcr.io/${GITHUB_REPOSITORY}/backend:latest
+    image: ghcr.io/${GITHUB_REPOSITORY}:latest
     container_name: siafrench-explorer
     restart: unless-stopped
     depends_on:
@@ -68,7 +68,7 @@ services:
       - siafrench-network
 
   worker:
-    image: ghcr.io/${GITHUB_REPOSITORY}/backend:latest
+    image: ghcr.io/${GITHUB_REPOSITORY}:latest
     container_name: siafrench-worker
     restart: unless-stopped
     depends_on:
@@ -99,7 +99,7 @@ services:
       - siafrench-network
 
   analytics:
-    image: ghcr.io/${GITHUB_REPOSITORY}/backend:latest
+    image: ghcr.io/${GITHUB_REPOSITORY}:latest
     container_name: siafrench-analytics
     restart: unless-stopped
     depends_on:
@@ -129,7 +129,7 @@ services:
       - siafrench-network
 
   gateway:
-    image: ghcr.io/${GITHUB_REPOSITORY}/backend:latest
+    image: ghcr.io/${GITHUB_REPOSITORY}:latest
     container_name: siafrench-gateway
     restart: unless-stopped
     environment:
@@ -141,25 +141,6 @@ services:
       - "3001:3000"
     healthcheck:
       test: [ "CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/health" ]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-    deploy:
-      resources:
-        limits:
-          cpus: '0.25'
-          memory: 128M
-    networks:
-      - siafrench-network
-
-  frontend:
-    image: ghcr.io/${GITHUB_REPOSITORY}/frontend:latest
-    container_name: siafrench-frontend
-    restart: unless-stopped
-    ports:
-      - "8080:80"
-    healthcheck:
-      test: [ "CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:80" ]
       interval: 30s
       timeout: 10s
       retries: 3
