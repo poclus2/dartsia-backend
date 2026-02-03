@@ -48,6 +48,7 @@ export class HostScanProcessor extends WorkerHost {
         const limit = 500;
         let successCount = 0;
         let totalFetched = 0;
+        const now = new Date(); // Scan start time (constant for entire scan)
 
         while (true) {
             let hosts;
@@ -79,8 +80,6 @@ export class HostScanProcessor extends WorkerHost {
             }
 
             totalFetched += hosts.length;
-
-            const now = new Date();
 
             for (const data of hosts) {
                 // ... (processing logic remains the same) ...
@@ -202,6 +201,21 @@ export class HostScanProcessor extends WorkerHost {
                 this.logger.warn('Max host limit reached, stopping sync.');
                 break;
             }
+        }
+
+        // CRITICAL: Auto-cleanup stale hosts after scan completes
+        // Soft-delete hosts that weren't updated in this scan cycle (lastSeen < scanStartTime)
+        // This ensures the count stays accurate after each scan
+        const staleHostsResult = await this.hostRepo
+            .createQueryBuilder()
+            .update()
+            .set({ score: null, scoreUpdatedAt: null })
+            .where('score IS NOT NULL')
+            .andWhere('"lastSeen" < :scanStartTime', { scanStartTime: now })
+            .execute();
+
+        if (staleHostsResult.affected > 0) {
+            this.logger.log(`Cleaned up ${staleHostsResult.affected} stale hosts (not seen this scan).`);
         }
 
         this.logger.log(`Synced ${successCount}/${totalFetched} hosts.`);
