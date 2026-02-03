@@ -1,7 +1,7 @@
 import { Injectable, Inject } from '@nestjs/common';
 import { Cache, CACHE_MANAGER } from '@nestjs/cache-manager';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, Not, IsNull } from 'typeorm';
 import { Host } from 'database';
 
 @Injectable()
@@ -17,7 +17,8 @@ export class HostService {
         if (cached) return cached;
 
         const hosts = await this.hostRepository.find({
-            order: { score: 'DESC' }, // Show best hosts first
+            where: { score: Not(IsNull()) }, // Only return scored/active hosts
+            order: { score: 'DESC' },
             take: 1000
         });
 
