@@ -143,11 +143,20 @@ export class HostScanProcessor extends WorkerHost {
                     return daysSinceLastScan <= 7; // Active in last week
                 })();
 
-                // Skip completely if host doesn't meet ANY active criteria
-                if (!recentlyActive && !acceptingContracts && !hasValidPrice) {
-                    // Don't save to database - inactive host
+
+                // Stricter filter to match Siascan (~500 hosts): Require accepting contracts
+                // AND at least one other quality indicator (price OR recent activity)
+                if (!acceptingContracts) {
+                    // Don't save hosts that aren't accepting contracts
                     continue;
                 }
+
+                // Among contract-accepting hosts, require either valid price OR recent scan
+                if (!hasValidPrice && !recentlyActive) {
+                    // Skip hosts with no pricing or activity data
+                    continue;
+                }
+
 
                 // Price normalization: if invalid price, use 0 (penalty)
                 const normPrice = hasValidPrice ? Math.max(0, Math.min(1, 1000 / (storagePrice + 1))) : 0;
