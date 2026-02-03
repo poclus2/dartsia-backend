@@ -96,12 +96,13 @@ export class HostScanProcessor extends WorkerHost {
                     host = this.hostRepo.create({
                         publicKey: data.publicKey,
                         firstSeen: data.firstSeen ? new Date(data.firstSeen) : now,
-                        // Fix: Set lastSeen to current scan time (we're processing this host now)
-                        lastSeen: now
+                        // CRITICAL: Use source's lastScan (actual scan success time), NOT current time
+                        // This prevents inactive hosts from appearing active
+                        lastSeen: data.lastScan ? new Date(data.lastScan) : new Date(0)
                     });
                 } else {
-                    // Update lastSeen to current scan time (we just fetched this host)
-                    host.lastSeen = now;
+                    // Update lastSeen to source's lastScan timestamp
+                    host.lastSeen = data.lastScan ? new Date(data.lastScan) : host.lastSeen;
                 }
 
                 host.netAddress = data.netAddress || null;
@@ -144,18 +145,15 @@ export class HostScanProcessor extends WorkerHost {
                 })();
 
 
-                // Stricter filter to match Siascan (~500 hosts): Require accepting contracts
-                // AND at least one other quality indicator (price OR recent activity)
-                if (!acceptingContracts) {
-                    // Don't save hosts that aren't accepting contracts
+                // STRICTEST filter: Require accepting contracts AND recent activity (< 7 days)
+                // This prevents inactive hosts (e.g., offline for 2 years) from appearing as active
+                if (!acceptingContracts || !recentlyActive) {
+                    // Skip hosts that aren't accepting contracts OR haven't been scanned recently
                     continue;
                 }
 
-                // Among contract-accepting hosts, require either valid price OR recent scan
-                if (!hasValidPrice && !recentlyActive) {
-                    // Skip hosts with no pricing or activity data
-                    continue;
-                }
+                // Optional: Among active contract-accepting hosts, prefer those with valid pricing
+                // (but we accept them even without pricing if they're verified active)
 
 
                 // Price normalization: if invalid price, use 0 (penalty)
