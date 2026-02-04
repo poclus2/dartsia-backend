@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, MoreThan, Raw } from 'typeorm';
+import { Repository, MoreThan, Raw, Not, IsNull } from 'typeorm';
 import { Host, Block, HostMetric } from 'database';
 import { SiaClient } from 'sia-client';
 
@@ -19,11 +19,12 @@ export class AnalyticsService {
         // 1. Total Hosts (all scanned hosts in DB)
         const totalHosts = await this.hostRepo.count();
 
-        // 2. Active Hosts (scanned in last 48 hours)
-        const twoDaysAgo = new Date(Date.now() - 48 * 60 * 60 * 1000);
+        // 2. Active Hosts (scored hosts = accepting contracts + recently active)
+        // IMPORTANT: Use same definition as worker filter (score IS NOT NULL)
+        // Previously used lastSeen > 48h which included hosts without scores (causing count mismatch)
         const activeHosts = await this.hostRepo.count({
             where: {
-                lastSeen: MoreThan(twoDaysAgo)
+                score: Not(IsNull())
             }
         });
 
