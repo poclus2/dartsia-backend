@@ -19,18 +19,15 @@ export class AnalyticsService {
         // 1. Total Scanned Hosts (DB)
         const dbTotalHosts = await this.hostRepo.count();
 
-        // 2. Active Hosts (Full entities needed for storage sum)
-        const activeHostsList = await this.hostRepo.find({
-            where: {
-                score: Not(IsNull())
-            }
-        });
+        // 2. All Hosts (Full entities needed for storage sum)
+        // Relaxed filter: Get ALL hosts to ensure we catch those with data but no score yet
+        const activeHostsList = await this.hostRepo.find();
 
         // 3. Fetch Network Metrics from API (for Total Known Hosts count)
         let totalKnownHosts = 0;
         try {
             const apiMetrics = await this.siaClient.getNetworkMetrics();
-            totalKnownHosts = Number(apiMetrics.activeHosts || 0); // Siagraph calls it activeHosts but it means Total Known
+            totalKnownHosts = Number(apiMetrics.activeHosts || 0);
         } catch (error) {
             console.error('Failed to fetch total hosts from API', error);
         }
@@ -40,6 +37,7 @@ export class AnalyticsService {
         let usedNetworkStorage = 0;
         let totalPrice = 0;
         let priceCount = 0;
+        const debugLog: any[] = [];
 
         const SECTOR_SIZE = 4194304;
 
@@ -49,6 +47,16 @@ export class AnalyticsService {
 
             let t = Number(v2?.totalStorage || v1?.totalstorage || 0);
             let r = Number(v2?.remainingStorage || v1?.remainingstorage || 0);
+
+            // Debug sample first 5 hosts with data
+            if (t > 0 && debugLog.length < 5) {
+                debugLog.push({
+                    pk: h.publicKey.substring(0, 5),
+                    t: t,
+                    r: r,
+                    calcUsed: Math.max(0, t - r)
+                });
+            }
 
             // Convert sectors to bytes heuristic
             if (t > 0 && t < 100 * 1024 * 1024 * 1024) {
@@ -103,7 +111,9 @@ export class AnalyticsService {
             totalStorage: total.toString(),
             avgStoragePrice: finalAvgStoragePrice,
             blockHeight: tip?.height || 0,
-            lastBlockTime: tip?.timestamp
+            lastBlockTime: tip?.timestamp,
+            // @ts-ignore
+            debug: debugLog
         };
     }
 
@@ -167,7 +177,7 @@ export class AnalyticsService {
             };
         } catch (error) {
             console.error('ERROR in getNetworkHistory:', error);
-            throw error; // Propagate error
+            throw error;
         }
     }
 
