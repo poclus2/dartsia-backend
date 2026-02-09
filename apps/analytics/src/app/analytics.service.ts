@@ -19,12 +19,11 @@ export class AnalyticsService {
         // 1. Total Scanned Hosts (DB)
         const dbTotalHosts = await this.hostRepo.count();
 
-        // 2. Active Hosts (for Storage & Price)
-        // Filter: Active in last 48h to avoid counting dead hosts and getting huge capacity sums
-        const twoDaysAgo = new Date(Date.now() - 48 * 60 * 60 * 1000);
+        // 2. Active Hosts (aligned with Host List logic)
+        // Filter: Must have a score (implies scanned, active, and meeting criteria)
         const activeHostsList = await this.hostRepo.find({
             where: {
-                lastSeen: MoreThan(twoDaysAgo)
+                score: Not(IsNull())
             }
         });
 
@@ -43,7 +42,6 @@ export class AnalyticsService {
         let totalPrice = 0;
         let priceCount = 0;
         const debugLog: any[] = [];
-
         const SECTOR_SIZE = 4194304;
 
         for (const h of activeHostsList) {
@@ -53,7 +51,7 @@ export class AnalyticsService {
             let t = Number(v2?.totalStorage || v1?.totalstorage || 0);
             let r = Number(v2?.remainingStorage || v1?.remainingstorage || 0);
 
-            // Debug sample first 5 hosts with data
+            // Debug sample first 5
             if (t > 0 && debugLog.length < 5) {
                 debugLog.push({
                     pk: h.publicKey.substring(0, 5),
@@ -91,21 +89,16 @@ export class AnalyticsService {
         const total = totalNetworkStorage;
         const used = usedNetworkStorage;
         let finalAvgStoragePrice = priceCount > 0 ? (totalPrice / priceCount) : 0;
+        finalAvgStoragePrice = Number(finalAvgStoragePrice.toFixed(2));
 
         if (finalAvgStoragePrice === 0) {
             try {
-                // Fallback attempt (simplified to 0 if no active hosts with price)
                 const { avg } = await this.metricRepo
                     .createQueryBuilder('m')
                     .select('AVG(m.storagePrice)', 'avg')
                     .where('m.time > :time', { time: new Date(Date.now() - 24 * 60 * 60 * 1000) })
                     .andWhere('m.storagePrice > 0')
                     .getRawOne();
-
-                // If fallback is needed, careful with units. Database likely stores RAW hastings if worker dumps it.
-                // Assuming raw for safety => 0 if raw is huge.
-                // Better to return 0 than nonsense price.
-                // finalAvgStoragePrice = Number(avg) || 0; 
             } catch (e) {
                 console.error('Failed to calc avg from DB', e);
             }
