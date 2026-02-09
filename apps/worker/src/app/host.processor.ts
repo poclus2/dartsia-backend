@@ -183,6 +183,10 @@ export class HostScanProcessor extends WorkerHost {
                 host.score = (normUptime * this.W_UPTIME) + (normPrice * this.W_PRICE) + (normAge * this.W_AGE);
                 host.scoreUpdatedAt = now;
 
+                // Save uptime metrics directly on Host entity for easier access
+                host.totalUptime = totalUptime.toString();
+                host.uptimeHours = totalTime.toString();
+
                 await this.hostRepo.save(host);
 
                 // 3. Insert Metric Snapshot (Partitioned)

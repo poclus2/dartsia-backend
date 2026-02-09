@@ -28,4 +28,10 @@ export class Host {
 
     @Column({ type: 'timestamptz', nullable: true })
     scoreUpdatedAt: Date;
+
+    @Column({ type: 'varchar', nullable: true })
+    totalUptime: string;
+
+    @Column({ type: 'varchar', nullable: true })
+    uptimeHours: string;
 }
