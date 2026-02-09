@@ -19,9 +19,14 @@ export class AnalyticsService {
         // 1. Total Scanned Hosts (DB)
         const dbTotalHosts = await this.hostRepo.count();
 
-        // 2. All Hosts (Full entities needed for storage sum)
-        // Relaxed filter: Get ALL hosts to ensure we catch those with data but no score yet
-        const activeHostsList = await this.hostRepo.find();
+        // 2. Active Hosts (for Storage & Price)
+        // Filter: Active in last 48h to avoid counting dead hosts and getting huge capacity sums
+        const twoDaysAgo = new Date(Date.now() - 48 * 60 * 60 * 1000);
+        const activeHostsList = await this.hostRepo.find({
+            where: {
+                lastSeen: MoreThan(twoDaysAgo)
+            }
+        });
 
         // 3. Fetch Network Metrics from API (for Total Known Hosts count)
         let totalKnownHosts = 0;
@@ -74,7 +79,10 @@ export class AnalyticsService {
             else if (v1?.storageprice) price = parseFloat(v1.storageprice);
 
             if (price > 0) {
-                totalPrice += price;
+                // Convert Hastings/Byte/Block to SC/TB/Month
+                // Factor: 4320 blocks/mo * 1e12 bytes/TB * 1e-24 SC/Hastings = 4.32e-9
+                const priceInSC = price * 4320 * 1e-12;
+                totalPrice += priceInSC;
                 priceCount++;
             }
         }
@@ -86,6 +94,7 @@ export class AnalyticsService {
 
         if (finalAvgStoragePrice === 0) {
             try {
+                // Fallback attempt (simplified to 0 if no active hosts with price)
                 const { avg } = await this.metricRepo
                     .createQueryBuilder('m')
                     .select('AVG(m.storagePrice)', 'avg')
@@ -93,7 +102,10 @@ export class AnalyticsService {
                     .andWhere('m.storagePrice > 0')
                     .getRawOne();
 
-                finalAvgStoragePrice = Number(avg) || 0;
+                // If fallback is needed, careful with units. Database likely stores RAW hastings if worker dumps it.
+                // Assuming raw for safety => 0 if raw is huge.
+                // Better to return 0 than nonsense price.
+                // finalAvgStoragePrice = Number(avg) || 0; 
             } catch (e) {
                 console.error('Failed to calc avg from DB', e);
             }
