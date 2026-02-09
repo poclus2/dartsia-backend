@@ -135,19 +135,21 @@ export class HostScanProcessor extends WorkerHost {
                 const acceptingContracts = data.settings?.acceptingcontracts || data.v2Settings?.acceptingContracts || data.v2Settings?.accepting_contracts;
                 const hasValidPrice = !isNaN(storagePrice) && storagePrice > 0;
 
-                // Check if host was scanned recently (last 7 days)
-                const wasRecentlySeen = data.lastScanSuccessful && data.lastScan;
-                const recentlyActive = wasRecentlySeen && (() => {
+                // Check if host was scanned recently (last 14 days - relaxed from 7)
+                // We ignore data.lastScanSuccessful because sometimes it's false even if the host is arguably active
+                const recentlyActive = (() => {
+                    if (!data.lastScan) return false;
                     const scanDate = new Date(data.lastScan);
                     const daysSinceLastScan = (now.getTime() - scanDate.getTime()) / (24 * 3600 * 1000);
-                    return daysSinceLastScan <= 7; // Active in last week
+                    return daysSinceLastScan <= 14; // Active in last 2 weeks
                 })();
 
 
-                // STRICTEST filter: Require accepting contracts AND recent activity (< 7 days)
+                // STRICTEST filter: Require accepting contracts AND recent activity (< 14 days)
                 // This prevents inactive hosts (e.g., offline for 2 years) from appearing as active
+                // But allows hosts with recent failed scans (as long as they were seen recently)
                 if (!acceptingContracts || !recentlyActive) {
-                    // Skip hosts that aren't accepting contracts OR haven't been scanned recently
+                    // Skip hosts that aren't accepting contracts OR haven't been seen in 2 weeks
                     continue;
                 }
 
