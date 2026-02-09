@@ -104,7 +104,13 @@ export class HostScanProcessor extends WorkerHost {
                     host.lastSeen = data.lastScan ? new Date(data.lastScan) : host.lastSeen;
                 }
 
-                host.netAddress = data.netAddress || null;
+                // CRITICAL: Ensure netAddress is not null for frontend search
+                // Fallback to V2 net address if V1 is missing
+                let netAddress = data.netAddress;
+                if (!netAddress && data.v2NetAddresses && data.v2NetAddresses.length > 0) {
+                    netAddress = data.v2NetAddresses[0].address;
+                }
+                host.netAddress = netAddress || '';
                 // host.lastSeen -- Handled above
                 host.settings = data.settings || {};
                 host.v2Settings = data.v2Settings || {}; // Save v2 settings
