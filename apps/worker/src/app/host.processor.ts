@@ -115,24 +115,22 @@ export class HostScanProcessor extends WorkerHost {
                 const totalTime = this.parseNumeric(data.uptimeH, 1) || 1; // Prevent div by 0
                 const normUptime = Math.min(totalUptime / totalTime, 1);
 
-                // Price: Parsing Logic. Treat missing as 'expensive' (0 score) to penalize bad data
-                // Handle casing fallback (storageprice vs storagePrice)
-                // Also check v2Settings (snake_case typically)
-                let rawStoragePrice = data.settings?.storageprice || data.settings?.storagePrice;
-
-                // Try v2Settings (RHP3 structure often uses nested prices or snake_case)
-                if (data.v2Settings) {
-                    // Common rhp3 keys: prices.storage_price or similar
-                    // We check shallow keys first just in case
-                    if (data.v2Settings.storage_price) rawStoragePrice = data.v2Settings.storage_price;
-                    else if (data.v2Settings.prices?.storage_price) rawStoragePrice = data.v2Settings.prices.storage_price;
-                    else if (data.v2Settings.storagePrice) rawStoragePrice = data.v2Settings.storagePrice; // camelCase
-                }
+                // Price: Parsing Logic - PRIORITIZE V2 (RHP3) over legacy V1
+                // V1 hosts are no longer active on the network, so we focus on V2
+                let rawStoragePrice = data.v2Settings?.prices?.storagePrice || // V2 nested price (preferred)
+                    data.v2Settings?.storagePrice ||          // V2 shallow (fallback)
+                    data.v2Settings?.prices?.storage_price || // V2 snake_case
+                    data.settings?.storageprice ||            // V1 (legacy)
+                    data.settings?.storagePrice;              // V1 camelCase
 
                 const storagePrice = this.parseNumeric(rawStoragePrice, NaN); // Use NaN to detect missing
 
-                // Strict filter: SAVE host only if it meets at least one meaningful criterion
-                const acceptingContracts = data.settings?.acceptingcontracts || data.v2Settings?.acceptingContracts || data.v2Settings?.accepting_contracts;
+                // EXPLICIT V2 VERIFICATION: Only accept hosts running V2 protocol (RHP3)
+                // V1 hosts are deprecated and no longer active on the network
+                const isV2Host = data.v2 === true || !!data.v2Settings;
+                const acceptingContracts = isV2Host
+                    ? (data.v2Settings?.acceptingContracts === true)
+                    : false; // Reject all V1-only hosts
                 const hasValidPrice = !isNaN(storagePrice) && storagePrice > 0;
 
                 // Check if host was scanned recently (last 14 days - relaxed from 7)
@@ -175,19 +173,29 @@ export class HostScanProcessor extends WorkerHost {
                 const isOnline = (now.getTime() - host.lastSeen.getTime()) < 24 * 60 * 60 * 1000;
 
                 if (isOnline) {
-                    let remainingStorage = data.settings?.remainingstorage;
-                    if (data.v2Settings) {
-                        if (data.v2Settings.remaining_storage) remainingStorage = data.v2Settings.remaining_storage;
-                        else if (data.v2Settings.remainingStorage) remainingStorage = data.v2Settings.remainingStorage; // camelCase
-                    }
+                    // Prioritize V2 settings for storage metrics
+                    let remainingStorage = data.v2Settings?.remainingStorage ||
+                        data.v2Settings?.remaining_storage ||
+                        data.settings?.remainingstorage;
+
+                    // Prioritize V2 settings for bandwidth prices
+                    let uploadPrice = data.v2Settings?.prices?.ingressPrice ||
+                        data.v2Settings?.prices?.ingress_price ||
+                        data.settings?.uploadbandwidthprice ||
+                        data.settings?.uploadprice;
+
+                    let downloadPrice = data.v2Settings?.prices?.egressPrice ||
+                        data.v2Settings?.prices?.egress_price ||
+                        data.settings?.downloadbandwidthprice ||
+                        data.settings?.downloadprice;
 
                     const metric = this.metricRepo.create({
                         time: now,
                         hostPublicKey: host.publicKey,
                         storagePrice: storagePrice,
-                        uploadPrice: this.parseNumeric(data.settings?.uploadprice, 0),
-                        downloadPrice: this.parseNumeric(data.settings?.downloadprice, 0),
-                        remainingStorage: remainingStorage || '0',
+                        uploadPrice: this.parseNumeric(uploadPrice, 0),
+                        downloadPrice: this.parseNumeric(downloadPrice, 0),
+                        remainingStorage: remainingStorage?.toString() || '0',
                         uptimeTotal: totalUptime.toString(),
                         uptimeH: totalTime.toString()
                     });
