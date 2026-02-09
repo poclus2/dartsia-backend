@@ -128,26 +128,37 @@ export class HostScanProcessor extends WorkerHost {
                 // EXPLICIT V2 VERIFICATION: Only accept hosts running V2 protocol (RHP3)
                 // V1 hosts are deprecated and no longer active on the network
                 const isV2Host = data.v2 === true || !!data.v2Settings;
-                const acceptingContracts = isV2Host
-                    ? (data.v2Settings?.acceptingContracts === true)
-                    : false; // Reject all V1-only hosts
+
+                // Note: We accept hosts regardless of acceptingContracts status
+                // because hosts may temporarily disable this while reconfiguring.
+                // This matches HostScore's approach and provides better coverage.
+                if (!isV2Host) {
+                    continue; // Skip V1-only hosts
+                }
+
                 const hasValidPrice = !isNaN(storagePrice) && storagePrice > 0;
 
-                // Check if host was scanned recently (last 14 days - relaxed from 7)
-                // We ignore data.lastScanSuccessful because sometimes it's false even if the host is arguably active
+                // Check if host was scanned recently (last 48 hours for better accuracy)
+                // AND if the last scan was successful (host is actually online)
                 const recentlyActive = (() => {
                     if (!data.lastScan) return false;
                     const scanDate = new Date(data.lastScan);
-                    const daysSinceLastScan = (now.getTime() - scanDate.getTime()) / (24 * 3600 * 1000);
-                    return daysSinceLastScan <= 14; // Active in last 2 weeks
+                    const hoursSinceLastScan = (now.getTime() - scanDate.getTime()) / (60 * 60 * 1000);
+                    return hoursSinceLastScan <= 48; // Active in last 48 hours
                 })();
 
+                // CRITICAL: Check if last scan was successful (host is online)
+                // This prevents accepting hosts that are offline/unreachable
+                const isOnline = data.lastScanSuccessful === true;
 
-                // STRICTEST filter: Require accepting contracts AND recent activity (< 14 days)
-                // This prevents inactive hosts (e.g., offline for 2 years) from appearing as active
-                // But allows hosts with recent failed scans (as long as they were seen recently)
-                if (!acceptingContracts || !recentlyActive) {
-                    // Skip hosts that aren't accepting contracts OR haven't been seen in 2 weeks
+                // STRICTEST filter: Require V2 protocol AND recent activity AND online status
+                // This ensures we only show hosts that are:
+                // 1. V2 protocol (RHP3)
+                // 2. Scanned in last 48h
+                // 3. Last scan was successful (online/reachable)
+                // Note: We don't filter on acceptingContracts to match HostScore coverage
+                if (!recentlyActive || !isOnline) {
+                    // Skip hosts that haven't been seen recently OR are offline
                     continue;
                 }
 
