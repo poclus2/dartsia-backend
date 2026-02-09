@@ -149,7 +149,7 @@ export class HostScanProcessor extends WorkerHost {
 
                 // CRITICAL: Check if last scan was successful (host is online)
                 // This prevents accepting hosts that are offline/unreachable
-                const isOnline = data.lastScanSuccessful === true;
+                const isLastScanSuccessful = data.lastScanSuccessful === true;
 
                 // STRICTEST filter: Require V2 protocol AND recent activity AND online status
                 // This ensures we only show hosts that are:
@@ -157,7 +157,7 @@ export class HostScanProcessor extends WorkerHost {
                 // 2. Scanned in last 48h
                 // 3. Last scan was successful (online/reachable)
                 // Note: We don't filter on acceptingContracts to match HostScore coverage
-                if (!recentlyActive || !isOnline) {
+                if (!recentlyActive || !isLastScanSuccessful) {
                     // Skip hosts that haven't been seen recently OR are offline
                     continue;
                 }
