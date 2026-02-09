@@ -225,14 +225,14 @@ export class HostScanProcessor extends WorkerHost {
         }
 
         // CRITICAL: Auto-cleanup stale hosts after scan completes
-        // Soft-delete hosts that weren't updated in this scan cycle (lastSeen < scanStartTime)
+        // Soft-delete hosts that weren't updated in this scan cycle (scoreUpdatedAt < scanStartTime)
         // This ensures the count stays accurate after each scan
         const staleHostsResult = await this.hostRepo
             .createQueryBuilder()
             .update()
             .set({ score: null, scoreUpdatedAt: null })
             .where('score IS NOT NULL')
-            .andWhere('"lastSeen" < :scanStartTime', { scanStartTime: now })
+            .andWhere('"scoreUpdatedAt" < :scanStartTime', { scanStartTime: now })
             .execute();
 
         if (staleHostsResult.affected > 0) {

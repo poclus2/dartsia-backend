@@ -90,12 +90,10 @@ export class AnalyticsService {
     }
 
     async getTopHosts(limit: number = 50) {
-        // Only return hosts seen in the last 24 hours
+        // Only return scored/active hosts (consistent with worker filter)
         return this.hostRepo.find({
             where: {
-                // TypeORM doesn't support simple relative time in find options easily without Raw
-                // We'll use Raw for Postgres interval
-                lastSeen: Raw((alias) => `${alias} > NOW() - INTERVAL '24 hours'`)
+                score: Not(IsNull())
             },
             order: { score: 'DESC' },
             take: limit
