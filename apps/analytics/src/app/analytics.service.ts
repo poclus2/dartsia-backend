@@ -10,53 +10,73 @@ export class AnalyticsService {
         @InjectRepository(Host) private readonly hostRepo: Repository<Host>,
         @InjectRepository(Block) private readonly blockRepo: Repository<Block>,
         @InjectRepository(HostMetric) private readonly metricRepo: Repository<HostMetric>,
-        private readonly siaClient: SiaClient,
+        private readonly siaClient: SiaClient
     ) {
         // Analytics Service Initialized
     }
 
     async getNetworkStats() {
-        // 1. Total Hosts (all scanned hosts in DB)
-        const totalHosts = await this.hostRepo.count();
+        // 1. Total Scanned Hosts (DB)
+        const dbTotalHosts = await this.hostRepo.count();
 
-        // 2. Active Hosts (scored hosts = accepting contracts + recently active)
-        // IMPORTANT: Use same definition as worker filter (score IS NOT NULL)
-        // Previously used lastSeen > 48h which included hosts without scores (causing count mismatch)
-        const activeHosts = await this.hostRepo.count({
+        // 2. Active Hosts (Full entities needed for storage sum)
+        const activeHostsList = await this.hostRepo.find({
             where: {
                 score: Not(IsNull())
             }
         });
 
-        // 3. Fetch Network Metrics from API (storage info only)
-        let total = 0;
-        let remaining = 0;
-        let used = 0;
-        let avgStoragePrice = 0;
-
+        // 3. Fetch Network Metrics from API (for Total Known Hosts count)
+        let totalKnownHosts = 0;
         try {
             const apiMetrics = await this.siaClient.getNetworkMetrics();
-            console.log('DEBUG: API Metrics Response:', JSON.stringify(apiMetrics));
-
-            // NOTE: We ignore apiMetrics.activeHosts and use DB count instead
-            total = Number(apiMetrics.totalStorage || apiMetrics.totalstorage || 0);
-            remaining = Number(apiMetrics.remainingStorage || apiMetrics.remainingstorage || 0);
-            used = total - remaining;
-
-            // Try getting price from API
-            avgStoragePrice = Number(apiMetrics.avgStoragePrice || apiMetrics.storageprice || 0);
-
-            console.log(`DEBUG: Storage Calc: Total=${total}, Remaining=${remaining}, Used=${used}`);
-
-            if (remaining === 0 && total > 0) {
-                console.warn('WARNING: Remaining storage is 0 while Total is > 0. API mismatch suspected.');
-            }
+            totalKnownHosts = Number(apiMetrics.activeHosts || 0); // Siagraph calls it activeHosts but it means Total Known
         } catch (error) {
-            console.error('Failed to fetch network metrics from Siagraph API', error);
+            console.error('Failed to fetch total hosts from API', error);
         }
 
-        // If API price is 0, calculate from local DB (last 24h)
-        if (avgStoragePrice === 0) {
+        // Calculate Storage Usage from our Scanned Active Hosts (more accurate)
+        let totalNetworkStorage = 0;
+        let usedNetworkStorage = 0;
+        let totalPrice = 0;
+        let priceCount = 0;
+
+        const SECTOR_SIZE = 4194304;
+
+        for (const h of activeHostsList) {
+            const v2 = h.v2Settings;
+            const v1 = h.settings;
+
+            let t = Number(v2?.totalStorage || v1?.totalstorage || 0);
+            let r = Number(v2?.remainingStorage || v1?.remainingstorage || 0);
+
+            // Convert sectors to bytes heuristic
+            if (t > 0 && t < 100 * 1024 * 1024 * 1024) {
+                t *= SECTOR_SIZE;
+                r *= SECTOR_SIZE;
+            }
+
+            if (t > 0) {
+                totalNetworkStorage += t;
+                usedNetworkStorage += Math.max(0, t - r);
+            }
+
+            let price = 0;
+            if (v2?.prices?.storagePrice) price = parseFloat(v2.prices.storagePrice);
+            else if (v1?.storageprice) price = parseFloat(v1.storageprice);
+
+            if (price > 0) {
+                totalPrice += price;
+                priceCount++;
+            }
+        }
+
+        // Use our local values overrides
+        const total = totalNetworkStorage;
+        const used = usedNetworkStorage;
+        let finalAvgStoragePrice = priceCount > 0 ? (totalPrice / priceCount) : 0;
+
+        if (finalAvgStoragePrice === 0) {
             try {
                 const { avg } = await this.metricRepo
                     .createQueryBuilder('m')
@@ -65,25 +85,23 @@ export class AnalyticsService {
                     .andWhere('m.storagePrice > 0')
                     .getRawOne();
 
-                avgStoragePrice = Number(avg) || 0;
-                console.log('Calculated avgStoragePrice from DB:', avgStoragePrice);
+                finalAvgStoragePrice = Number(avg) || 0;
             } catch (e) {
-                console.error('Failed to calc avgStoragePrice from DB', e);
+                console.error('Failed to calc avg from DB', e);
             }
         }
 
-        // 3. Block Tip
         const tip = await this.blockRepo.findOne({
             order: { height: 'DESC' },
             where: {}
         });
 
         return {
-            totalHosts,      // All scanned hosts in DB
-            activeHosts,     // Hosts active in last 48 hours
+            totalHosts: totalKnownHosts > 0 ? totalKnownHosts : dbTotalHosts,
+            activeHosts: activeHostsList.length,
             usedStorage: used.toString(),
             totalStorage: total.toString(),
-            avgStoragePrice,
+            avgStoragePrice: finalAvgStoragePrice,
             blockHeight: tip?.height || 0,
             lastBlockTime: tip?.timestamp
         };
@@ -102,34 +120,20 @@ export class AnalyticsService {
 
     async getNetworkHistory(period: '24h' | '30d' = '24h') {
         try {
-            const interval = period === '24h' ? '1 hour' : '1 day';
             const limitTimestamp = period === '24h'
                 ? new Date(Date.now() - 24 * 60 * 60 * 1000)
                 : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
 
-            // 1. Host Metrics History (Storage & Active Hosts)
-            // Query: Aggregate per host per bucket (avg), then sum up for the bucket total
-            // FIX: Join with hosts table to ensure we ONLY count currently active hosts (lastSeen > 24h ago).
-            // Otherwise, we count all 68k historical hosts that might have stale metrics.
+            // 1. Host Metrics History
             const metricsQuery = `
                 SELECT 
-                    bucket_inner as bucket,
-                    COUNT(DISTINCT sub."hostPublicKey") as "activeHosts",
-                    SUM("avg_storage") as "totalStorage",
-                    PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY "avg_price") as "storagePrice"
-                FROM (
-                    SELECT 
-                        date_trunc('${period === '24h' ? 'hour' : 'day'}', m."time") as bucket_inner,
-                        m."hostPublicKey",
-                        AVG(m."remainingStorage") as avg_storage,
-                        AVG(m."storagePrice") as avg_price
-                    FROM host_metrics m
-                    INNER JOIN hosts h ON m."hostPublicKey" = h."publicKey"
-                    WHERE m."time" > $1
-                    AND h."lastSeen" > NOW() - INTERVAL '24 hours' 
-                    AND m."storagePrice" > 0
-                    GROUP BY 1, 2
-                ) sub
+                    date_trunc('${period === '24h' ? 'hour' : 'day'}', m."time") as bucket,
+                    COUNT(DISTINCT m."hostPublicKey") as "activeHosts",
+                    SUM(m."remainingStorage") as "totalStorage",
+                    PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY m."storagePrice") as "storagePrice"
+                FROM host_metrics m
+                WHERE m."time" > $1
+                AND m."storagePrice" > 0
                 GROUP BY 1
                 ORDER BY 1 ASC
             `;
@@ -149,34 +153,32 @@ export class AnalyticsService {
 
             const txData = await this.blockRepo.query(txQuery, [limitTimestamp]);
 
-            // 3. Merge Data
-            // Create a map of timestamps to ensure alignment (optional, but good for charts)
-            // For simplicity, we just return the raw arrays and let frontend handle alignment or map them here.
-            // Let's formatting them nicely for the frontend.
-
             return {
-                metrics: metricsData.map(m => ({
+                metrics: metricsData.map((m: any) => ({
                     timestamp: m.bucket,
                     activeHosts: Number(m.activeHosts) || 0,
                     totalStorage: m.totalStorage,
-                    storagePrice: Number(m.storagePrice) || 0 // Convert to number
+                    storagePrice: Number(m.storagePrice) || 0
                 })),
-                transactions: txData.map(t => ({
+                transactions: txData.map((t: any) => ({
                     timestamp: t.bucket,
                     transactionVolume: Number(t.transactionVolume) || 0
                 }))
             };
         } catch (error) {
             console.error('ERROR in getNetworkHistory:', error);
-            throw error;
+            throw error; // Propagate error
         }
     }
 
     async getHostHistory(publicKey: string) {
         return this.metricRepo.find({
-            where: { hostPublicKey: publicKey },
+            where: {
+                // @ts-ignore
+                host: { publicKey }
+            },
             order: { time: 'ASC' },
-            take: 100 // Limit history points
+            take: 100
         });
     }
 }
